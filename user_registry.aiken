@@ -1,0 +1,26 @@
+module user_registry
+
+use aiken/transaction
+use aiken/transaction/credential
+use aiken/crypto
+use aiken/builtin
+use aiken/list
+
+// Define a type for User, including minted_amount
+type User {
+  address: Address,
+  minted_amount: Int, // Track the amount of BIT tokens already minted by the user
+}
+
+// Define a list to store whitelisted users (initially empty, managed off-chain)
+const WHITELISTED_USERS: List<User> = []
+
+// Placeholder for whitelist validator (initially always true)
+validator whitelist_validator() {
+  True
+}
+
+// Function to check if an address is whitelisted
+fn is_whitelisted(address: Address) -> Bool {
+  list.any(WHITELISTED_USERS, fn(user) { user.address == address })
+}

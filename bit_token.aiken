@@ -1,0 +1,64 @@
+module bit_token
+
+use aiken/transaction
+use aiken/transaction/credential
+use aiken/crypto
+use aiken/builtin
+use aiken/script
+use aiken/address
+use user_registry
+
+const TOKEN_NAME = "Basic Income Token"
+const TOKEN_SYMBOL = "BIT"
+const MAX_MINT_PER_EPOCH = 100
+
+// Define the minting policy script
+validator minting_policy(user_address: Address, current_epoch: Int, past_minted_amount: Int) {
+  // 1. Check if the user is whitelisted
+  script.trace_if_false("User not whitelisted", user_registry.is_whitelisted(user_address))
+
+  // 2. Calculate allowed mint amount for the current epoch
+  let allowed_mint_amount = MAX_MINT_PER_EPOCH - past_minted_amount // Simplified example
+
+  // 3. Get the minted amount from the transaction (assuming it's passed as a parameter for now)
+  let minted_amount_in_tx = transaction.minted_value_for_policy(policy_id())
+                                        .get_asset_amount(TOKEN_NAME)
+
+  // 4. Verify that the minted amount does not exceed the allowed amount
+  script.trace_if_false(
+    "Mint amount exceeds limit",
+    minted_amount_in_tx <= allowed_mint_amount,
+  )
+}
+
+// Define the policy ID
+fn policy_id(user_address: Address, current_epoch: Int, past_minted_amount: Int) -> PolicyId {
+  script_hash(minting_policy(user_address, current_epoch, past_minted_amount))
+}
+
+// Define the parameterized asset class for BIT
+fn parameterized_asset_class(user_address: Address, current_epoch: Int, past_minted_amount: Int) -> AssetClass {
+  AssetClass {
+    policy_id: policy_id(user_address, current_epoch, past_minted_amount),
+    token_name: TOKEN_NAME,
+  }
+}
+
+
+// Function to mint BIT tokens (now requires user address, epoch, past minted amount)
+fn mint_bit(
+  tx_builder: TransactionBuilder,
+  recipient: Address,
+  amount: Int,
+  user_address: Address, // Pass user address for policy context
+  current_epoch: Int,    // Pass current epoch for policy context
+  past_minted_amount: Int, // Pass past minted amount for policy context
+) {
+  transaction.mint_assets(
+    tx_builder: tx_builder,
+    policy_id: policy_id(user_address, current_epoch, past_minted_amount),
+    asset_name: TOKEN_NAME,
+    amount: amount,
+    recipient_address: recipient,
+  )
+}
