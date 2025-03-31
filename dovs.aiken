@@ -9,9 +9,14 @@ use asset_registry
 use user_registry
 
 // Define the claiming validator script (as before)
-validator claiming_validator() {
-  // ... claiming validation logic ...
-  True // Placeholder
+validator claiming_validator(asset: Asset, claimer_address: Address) {
+  let user_burned = get_user_bit_tokens_burned_for_asset(asset, claimer_address);
+
+  if user_burned > 0 {
+    True
+  } else {
+    False
+  }
 }
 
 // Function to claim an asset (as before)
@@ -21,18 +26,31 @@ fn claim_asset(
   claimer_address: Address,
   bit_tokens_to_burn: Int,
 ) {
-  // ... claim asset logic ...
-  builtin.trace_string("Asset claimed: " <> asset_id)
+  // Need to retrieve the asset from the asset_registry contract
+  // For now, assume we have access to the asset
+  // let asset = Asset {
+  //   description: "Test Asset",
+  //   creator: claimer_address,
+  //   total_bit_tokens_burned: 100,
+  //   user_bit_tokens_burned: aiken_map.from_list([(claimer_address, 20)]),
+  // };
+
+  // if claiming_validator(asset, claimer_address) {
+  //   builtin.trace_string("Asset claimed successfully: " <> asset_id);
+  //   // Add logic here to transfer the asset to the claimer
+  // } else {
+  //   builtin.trace_string("Asset claim failed: Insufficient ownership ratio");
+  // }
+  builtin.trace_string("Asset claiming logic not implemented yet");
 }
 
 // Function to calculate ownership ratio for a user and asset
-fn calculate_ownership_ratio(user: User, asset: Asset) -> Int {
-  // Placeholder:  In a real implementation, this would calculate the ownership ratio
-  // based on the amount of BIT tokens burned by the user for this asset
-  // and potentially other factors like total BIT tokens burned for this asset.
-
-  // For now, just return a placeholder value (e.g., 10)
-  10
+fn calculate_ownership_ratio(user_burned: Int, total_burned: Int) -> Int {
+  if total_burned == 0 {
+    0
+  } else {
+    user_burned / total_burned
+  }
 }
 
 // Function to get total BIT tokens burned for an asset
@@ -40,15 +58,16 @@ fn get_total_bit_tokens_burned_for_asset(asset: Asset) -> Int {
   // Placeholder: In a real implementation, this would retrieve the total BIT tokens
   // burned for a specific asset from on-chain state or datum.
 
-  // For now, return a placeholder value (e.g., 100)
-  100
+  asset.total_bit_tokens_burned
 }
 
 // Function to get BIT tokens burned by a user for an asset
-fn get_user_bit_tokens_burned_for_asset(user: User, asset: Asset) -> Int {
+fn get_user_bit_tokens_burned_for_asset(asset: Asset, claimer_address: Address) -> Int {
   // Placeholder: In a real implementation, this would retrieve the BIT tokens
   // burned by a specific user for a specific asset from on-chain state or datum.
 
-  // For now, return a placeholder value (e.g., 20)
-  20
+  match aiken_map.get(asset.user_bit_tokens_burned, claimer_address) {
+    Some(burned) -> burned,
+    None -> 0,
+  }
 }

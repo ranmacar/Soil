@@ -10,17 +10,62 @@ use user_registry
 type Asset {
   description: String, // Loose binding to real world
   creator: Address,    // Address of the user who created the asset
+  total_bit_tokens_burned: Int, // Total BIT tokens burned for this asset
+  user_bit_tokens_burned: Map<Address, Int>, // Mapping of user addresses to BIT tokens burned
 }
 
+type RegistryState {
+  assets: Map<String, Asset>, // Map of asset_id to Asset
+}
+
+// Define the contract datum
+type Datum = RegistryState
+
 // Placeholder for asset creation validation script (will be refined to check user whitelist)
-validator asset_creation_validator() {
+validator asset_creation_validator(datum: Datum) {
   // ... asset creation validation logic here ...
   True // For now, always true
 }
 
 // Function to create a new asset (only whitelisted users should be able to call this)
-fn create_asset(tx_builder: TransactionBuilder, description: String, creator: Address) {
+fn create_asset(tx_builder: TransactionBuilder, contract_address: Address, asset_id: String, description: String, creator: Address) {
   // In a real implementation, we would need to store the asset on-chain,
   // likely using a state token or datum. For now, this is just a placeholder.
+  let new_asset = Asset {
+    description: description,
+    creator: creator,
+    total_bit_tokens_burned: 0,
+    user_bit_tokens_burned: aiken_map.new(),
+  };
+
+  let registry_lookup_result = transaction.script_output_datum_of_address(contract_address)
+  let registry_state = match registry_lookup_result {
+      Ok(datum_bytes) -> datum.from_bytes::<RegistryState>(datum_bytes),
+      Err(_) -> { builtin.trace_string("Failed to fetch RegistryState datum"); panic() } // Handle error if datum not found
+  }
+
+  let new_assets = aiken_map.insert(registry_state.assets, asset_id, new_asset);
+
+  let new_registry_state = RegistryState {
+    assets: new_assets,
+  };
+
   builtin.trace_string("Asset created: " <> description)
+}
+
+// Function to burn BIT tokens for an asset
+fn burn_bit_tokens(asset: Asset, burner_address: Address, amount: Int) -> Asset {
+  let updated_total_burned = asset.total_bit_tokens_burned + amount;
+  let updated_user_burned = match aiken_map.get(asset.user_bit_tokens_burned, burner_address) {
+    Some(burned) -> burned + amount,
+    None -> amount,
+  };
+  let updated_user_bit_tokens_burned = aiken_map.insert(asset.user_bit_tokens_burned, burner_address, updated_user_burned);
+
+  Asset {
+    description: asset.description,
+    creator: asset.creator,
+    total_bit_tokens_burned: updated_total_burned,
+    user_bit_tokens_burned: updated_user_bit_tokens_burned,
+  }
 }

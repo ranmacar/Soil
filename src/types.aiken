@@ -1,0 +1,17 @@
+module Types
+
+type UserInfo {
+    is_whitelisted: Bool,
+    minted_amount: Int,
+    starting_date: Int, // Add starting date (e.g., epoch number)
+}
+
+type RegistryState {
+    users: aiken_map.Map<Address, UserInfo>,
+}
+
+type RegistryRedeemer {
+    AddUser(Address),
+    UpdateMintedAmount(Address, Int),
+    RemoveUser(Address),
+}

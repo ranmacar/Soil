@@ -5,22 +5,118 @@ use aiken/transaction/credential
 use aiken/crypto
 use aiken/builtin
 use aiken/list
+use aiken/map as aiken_map
+use aiken/datum
+use aiken/address
 
-// Define a type for User, including minted_amount
-type User {
-  address: Address,
-  minted_amount: Int, // Track the amount of BIT tokens already minted by the user
+// Define a type for User info stored in the datum
+type UserInfo {
+    is_whitelisted: Bool,
+    minted_amount: Int,
+    starting_date: Int, // Add starting date (e.g., epoch number)
 }
 
-// Define a list to store whitelisted users (initially empty, managed off-chain)
-const WHITELISTED_USERS: List<User> = []
-
-// Placeholder for whitelist validator (initially always true)
-validator whitelist_validator() {
-  True
+// Define the state datum structure
+type RegistryState {
+    users: aiken_map.Map<Address, UserInfo>,
 }
 
-// Function to check if an address is whitelisted
-fn is_whitelisted(address: Address) -> Bool {
-  list.any(WHITELISTED_USERS, fn(user) { user.address == address })
+// Define the redeemer actions for the user registry contract
+type RegistryRedeemer {
+    AddUser(Address),
+    UpdateMintedAmount(Address, Int),
+    RemoveUser(Address),
+}
+
+// Validator for user registry - manages state transitions
+validator whitelist_validator(datum: RegistryState, redeemer: RegistryRedeemer) {
+    // Define allowed state transitions based on redeemer actions
+    switch redeemer {
+        RegistryRedeemer::AddUser(user_address) -> {
+            // 1. Check if user already exists
+            if (aiken_map.has(datum.users, user_address)) {
+                script.trace_string("Error: User already exists in registry");
+                False // Invalid state transition
+            } else {
+                // 2. Add new user to the registry with initial info
+                let updated_users = aiken_map.insert(
+                    datum.users,
+                    user_address,
+                    UserInfo {
+                        is_whitelisted: True,
+                        minted_amount: 0,
+                        starting_date: transaction.tx_info().validity_interval.lower_bound // Use transaction validity interval as starting date
+                    },
+                );
+                // 3. Return true to indicate valid transition, state is updated implicitly
+                True
+            }
+        }
+        RegistryRedeemer::UpdateMintedAmount(user_address, new_minted_amount) -> {
+            // 1. Check if user exists
+            if (!aiken_map.has(datum.users, user_address)) {
+                script.trace_string("Error: User not found in registry for update");
+                False // Invalid state transition
+            } else {
+                // 2. Update minted amount for existing user
+                let current_user_info = get_user_info(datum, user_address); // Get current user info
+                let updated_user_info = UserInfo { ..current_user_info, minted_amount: new_minted_amount }; // Update minted_amount, keep other info
+                let updated_users = aiken_map.insert(datum.users, user_address, updated_user_info); // Insert updated user info
+                // 3. Return true for valid transition
+                True
+            }
+        }
+        RegistryRedeemer::RemoveUser(user_address) -> {
+            // 1. Check if user exists
+            if (!aiken_map.has(datum.users, user_address)) {
+                script.trace_string("Error: User not found in registry for removal");
+                False // Invalid state transition
+            } else {
+                // 2. Remove user from registry
+                let updated_users = aiken_map.remove(datum.users, user_address);
+                // 3. Return true for valid transition
+                True
+            }
+        }
+    }
+}
+
+// Function to get user info from the registry state
+fn get_user_info(state: RegistryState, address: Address) -> UserInfo {
+    match aiken_map.get(state.users, address) {
+        Ok(userInfo) -> userInfo,
+        Err(_) -> UserInfo { is_whitelisted: False, minted_amount: 0, starting_date: 0 }, // Default if user not in registry, starting_date is 0
+    }
+}
+
+// Function to check if an address is whitelisted from the registry state
+fn is_whitelisted(state: RegistryState, user_address: Address) -> Bool { // Added state and user_address parameters
+    get_user_info(state, user_address).is_whitelisted
+}
+
+// Function to get minted amount for a user from the registry state
+fn get_minted_amount(state: RegistryState, user_address: Address) -> Int { // Added state and address parameters
+    get_user_info(state, user_address).minted_amount
+}
+
+// Example function to add a user (This would be part of the contract logic, not just a helper function)
+fn add_user(tx_builder: TransactionBuilder, contract_address: Address, new_user_address: Address, current_epoch: Int) { // Added current_epoch parameter
+    let redeemer = RegistryRedeemer::AddUser(new_user_address) ;
+    transaction.script_inline_datum_and_redeemer(
+        tx_builder: tx_builder,
+        address: contract_address,
+        redeemer: redeemer,
+        datum: RegistryState { users: aiken_map.from_list([(new_user_address, UserInfo{is_whitelisted: True, minted_amount: 0, starting_date: current_epoch})]) }, // Example: set starting_date to current_epoch, and is_whitelisted to True
+    )
+}
+
+// Example function to update minted amount (This would be part of the contract logic)
+fn update_user_minted_amount(tx_builder: TransactionBuilder, contract_address: Address, user_address: Address, new_minted_amount: Int) {
+    let redeemer = RegistryRedeemer::UpdateMintedAmount(user_address, new_minted_amount);
+    transaction.script_inline_datum_and_redeemer(
+        tx_builder: tx_builder,
+        address: contract_address,
+        redeemer: redeemer,
+        datum: RegistryState { users: aiken_map.from_list([]) }, // Example: Replace with actual new state
+    )
 }

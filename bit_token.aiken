@@ -7,58 +7,106 @@ use aiken/builtin
 use aiken/script
 use aiken/address
 use user_registry
+use aiken/datum
 
 const TOKEN_NAME = "Basic Income Token"
 const TOKEN_SYMBOL = "BIT"
 const MAX_MINT_PER_EPOCH = 100
 
 // Define the minting policy script
-validator minting_policy(user_address: Address, current_epoch: Int, past_minted_amount: Int) {
-  // 1. Check if the user is whitelisted
-  script.trace_if_false("User not whitelisted", user_registry.is_whitelisted(user_address))
-
-  // 2. Calculate allowed mint amount for the current epoch
-  let allowed_mint_amount = MAX_MINT_PER_EPOCH - past_minted_amount // Simplified example
-
-  // 3. Get the minted amount from the transaction (assuming it's passed as a parameter for now)
-  let minted_amount_in_tx = transaction.minted_value_for_policy(policy_id())
-                                        .get_asset_amount(TOKEN_NAME)
-
-  // 4. Verify that the minted amount does not exceed the allowed amount
-  script.trace_if_false(
-    "Mint amount exceeds limit",
-    minted_amount_in_tx <= allowed_mint_amount,
-  )
-}
-
-// Define the policy ID
-fn policy_id(user_address: Address, current_epoch: Int, past_minted_amount: Int) -> PolicyId {
-  script_hash(minting_policy(user_address, current_epoch, past_minted_amount))
-}
-
-// Define the parameterized asset class for BIT
-fn parameterized_asset_class(user_address: Address, current_epoch: Int, past_minted_amount: Int) -> AssetClass {
-  AssetClass {
-    policy_id: policy_id(user_address, current_epoch, past_minted_amount),
-    token_name: TOKEN_NAME,
-  }
-}
-
-
-// Function to mint BIT tokens (now requires user address, epoch, past minted amount)
-fn mint_bit(
-  tx_builder: TransactionBuilder,
-  recipient: Address,
-  amount: Int,
-  user_address: Address, // Pass user address for policy context
-  current_epoch: Int,    // Pass current epoch for policy context
-  past_minted_amount: Int, // Pass past minted amount for policy context
+validator minting_policy(
+    user_address: Address,
+    current_epoch: Int,
+    user_registry_contract_address: Address // Add user registry contract address as parameter
 ) {
-  transaction.mint_assets(
-    tx_builder: tx_builder,
-    policy_id: policy_id(user_address, current_epoch, past_minted_amount),
-    asset_name: TOKEN_NAME,
-    amount: amount,
-    recipient_address: recipient,
-  )
+    // 1. Fetch the RegistryState datum from the user_registry contract
+    let registry_lookup_result = transaction.script_output_datum_of_address(user_registry_contract_address)
+    let registry_state = match registry_lookup_result {
+        Ok(datum_bytes) -> datum.from_bytes::<user_registry::RegistryState>(datum_bytes),
+        Err(_) -> { script.trace_string("Failed to fetch UserRegistry state datum"); panic() } // Handle error if datum not found
+    }
+
+    // 2. Check if the user is whitelisted using the fetched state
+    script.trace_if_false(
+        "User not whitelisted",
+        user_registry.is_whitelisted(registry_state, user_address), // Pass registry_state to is_whitelisted
+    )
+
+    // 3. Get the past minted amount from the fetched state
+    let past_minted_amount = user_registry.get_minted_amount(registry_state, user_address) // Pass registry_state to get_minted_amount
+
+    // 4. Calculate allowed mint amount for the current epoch
+    let allowed_mint_amount = MAX_MINT_PER_EPOCH - past_minted_amount // Simplified example
+
+    // 5. Get the minted amount from the transaction
+    let minted_amount_in_tx = transaction.minted_value_for_policy(policy_id(user_registry_contract_address, user_address, current_epoch)) // Pass user_registry_contract_address to policy_id
+        .get_asset_amount(TOKEN_NAME)
+
+    // 6. Verify that the minted amount does not exceed the allowed amount
+    script.trace_if_false(
+        "Mint amount exceeds limit",
+        minted_amount_in_tx <= allowed_mint_amount,
+    )
 }
+
+// Define the policy ID - now takes user_registry_contract_address as parameter
+fn policy_id(user_registry_contract_address: Address, user_address: Address, current_epoch: Int) -> PolicyId {
+    script_hash(minting_policy(user_address, current_epoch, user_registry_contract_address))
+}
+
+// Define the parameterized asset class for BIT - now takes user_registry_contract_address as parameter
+fn parameterized_asset_class(user_address: Address, current_epoch: Int, user_registry_contract_address: Address) -> AssetClass {
+    AssetClass {
+        policy_id: policy_id(user_registry_contract_address, user_address, current_epoch), // Pass user_registry_contract_address to policy_id
+        token_name: TOKEN_NAME,
+    }
+}
+
+
+// Function to mint BIT tokens - now updates minted amount in user registry - CLEANED UP
+fn mint_bit(
+    tx_builder: TransactionBuilder,
+    recipient: Address,
+    amount: Int,
+    user_address: Address, // Pass user address for policy context
+    current_epoch: Int,    // Pass current epoch for policy context
+    user_registry_contract_address: Address, // Pass user registry contract address
+    registry_validator_hash: ScriptHash, // Pass user registry validator hash
+) {
+    // Fetch RegistryState datum
+    let registry_lookup_result = transaction.script_output_datum_of_address(user_registry_contract_address)
+    let registry_state = result_unwrap(registry_lookup_result)
+
+    // Get current user info
+    let current_user_info = user_registry.get_user_info(registry_state, recipient);
+
+    // Calculate new minted amount
+    let new_minted_amount = current_user_info.minted_amount + amount;
+
+    // Create UpdateMintedAmount redeemer
+    let update_redeemer = user_registry::RegistryRedeemer::UpdateMintedAmount(recipient, new_minted_amount);
+
+    // Updated RegistryState with new minted amount
+    let updated_registry_state = user_registry::RegistryState {
+        users: aiken_map.insert(
+            registry_state.users,
+            recipient,
+            user_registry::UserInfo { ..current_user_info, minted_amount: new_minted_amount } // Update minted amount
+        ),
+    }
+
+    // Update RegistryState datum and mint tokens in one tx
+    transaction.script_output_inline_datum_and_redeemer(
+        tx_builder: tx_builder,
+        address: user_registry_contract_address,
+        datum: updated_registry_state,
+        redeemer: update_redeemer,
+    )
+    .mint_assets_to_script( // Chained minting action
+        policy_id: policy_id(user_registry_contract_address, user_address, current_epoch),
+        asset_name: TOKEN_NAME,
+        amount: amount,
+        recipient_script_hash: script_hash(minting_policy(user_address, current_epoch, user_registry_contract_address)),
+    )
+}
+
