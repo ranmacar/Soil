@@ -1,0 +1,35 @@
+{
+    "name": "soil-platform-backend",
+    "version": "1.0.0",
+    "description": "Cloudflare Workers backend for Soil platform - decentralized marketplace for ideas and products",
+    "main": "worker.js",
+    "scripts": {
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy",
+        "deploy:staging": "wrangler deploy --env staging",
+        "deploy:production": "wrangler deploy --env production",
+        "test": "vitest",
+        "format": "prettier --write .",
+        "lint": "eslint ."
+    },
+    "keywords": [
+        "cloudflare-workers",
+        "cardano",
+        "blockchain",
+        "marketplace",
+        "nft",
+        "defi"
+    ],
+    "author": "Soil Platform Team",
+    "license": "MIT",
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20240529.0",
+        "prettier": "^3.2.5",
+        "typescript": "^5.4.5",
+        "vitest": "^1.6.0",
+        "wrangler": "^3.57.0"
+    },
+    "dependencies": {
+        "@emurgo/cardano-serialization-lib-browser": "^11.5.0"
+    }
+}

@@ -1,0 +1,31 @@
+name = "soil-platform"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.staging]
+vars = { ENVIRONMENT = "staging" }
+
+[env.development]
+vars = { ENVIRONMENT = "development" }
+
+[[r2_buckets]]
+binding = "SOIL_DATA"
+bucket_name = "soil-platform-data"
+
+[[r2_buckets]]
+binding = "SOIL_METADATA"
+bucket_name = "soil-platform-metadata"
+
+[[kv_namespaces]]
+binding = "SOIL_SECRETS"
+id = "soil-secrets-kv"
+preview_id = "soil-secrets-kv-preview"
+
+[[kv_namespaces]]
+binding = "SOIL_CACHE"
+id = "soil-cache-kv"
+preview_id = "soil-cache-kv-preview"
