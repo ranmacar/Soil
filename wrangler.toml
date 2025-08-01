@@ -14,11 +14,11 @@ vars = { ENVIRONMENT = "development" }
 
 [[r2_buckets]]
 binding = "SOIL_DATA"
-bucket_name = "soil-platform-data"
+bucket_name = "soil-data"
 
 [[r2_buckets]]
 binding = "SOIL_METADATA"
-bucket_name = "soil-platform-metadata"
+bucket_name = "soil-metadata"
 
 [[kv_namespaces]]
 binding = "SOIL_SECRETS"
