@@ -1,0 +1,11 @@
+{
+  "name": "@soil/nostr",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Nostr-first SOIL community, store, and tower game",
+  "type": "module",
+  "scripts": {
+    "dev": "echo \"Scaffold only — add apps/web next\"",
+    "build": "echo \"Scaffold only\""
+  }
+}
