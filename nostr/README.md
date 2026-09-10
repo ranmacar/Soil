@@ -20,9 +20,9 @@ Then open **http://127.0.0.1:5173** in Chrome (or from Termux: `termux-open-url 
 
 Pan and pinch-zoom as usual. The crosshair control recenters on you.
 
-At zoom 13+ an H3 res-10 hex grid overlays the map. Your cell is highlighted; tap a hex to fade in a photorealistic 3D view of that cell (Google 3D Tiles). Close or press Escape to return.
+At zoom 13+ an H3 res-10 hex grid overlays the map. Tap a hex to fade into a pitched 3D view of that cell (satellite + terrain). Close or press Escape to return.
 
-3D tiles need a Map Tiles API key. Copy `apps/web/.env.example` to `apps/web/.env` as `VITE_GOOGLE_TILES_API_KEY`, or append `?key=` to the URL for a one-off test. Restart Vite after changing `.env`.
+If `VITE_GOOGLE_TILES_API_KEY` (or `?key=`) is set, that 3D view uses Google Photorealistic 3D Tiles instead. Enable Map Tiles API in Google Cloud; copy `apps/web/.env.example` to `apps/web/.env` and restart Vite.
 
 If the browser refuses geolocation, the Vite server tries `termux-location` (needs the Termux:API app + location permission). Last successful coordinate is remembered for the next launch.
 

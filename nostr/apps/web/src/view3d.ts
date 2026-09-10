@@ -3,10 +3,15 @@ import {
   cellToLatLng,
   getHexagonEdgeLengthAvg,
 } from "h3-js";
+import maplibregl from "maplibre-gl";
+import type { GeoJSONSource } from "maplibre-gl";
 import { H3_RES } from "./h3-overlay";
 
 const CESIUM_BASE =
   "https://ajax.googleapis.com/ajax/libs/cesiumjs/1.105/Build/Cesium";
+const HEX_SOURCE = "hex-focus";
+const HEX_FILL = "hex-focus-fill";
+const HEX_LINE = "hex-focus-line";
 
 type CesiumViewer = {
   resize: () => void;
@@ -92,6 +97,70 @@ function loadCesium(): Promise<CesiumNS> {
   });
 }
 
+function hexFeature(cell: string) {
+  return {
+    type: "Feature" as const,
+    properties: { id: cell },
+    geometry: {
+      type: "Polygon" as const,
+      coordinates: [cellToBoundary(cell, true)],
+    },
+  };
+}
+
+function terrainStyle(): maplibregl.StyleSpecification {
+  return {
+    version: 8,
+    sources: {
+      satellite: {
+        type: "raster",
+        tiles: [
+          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        ],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: "Tiles © Esri",
+      },
+      terrain: {
+        type: "raster-dem",
+        tiles: [
+          "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+        ],
+        encoding: "terrarium",
+        tileSize: 256,
+        maxzoom: 15,
+      },
+      [HEX_SOURCE]: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      },
+    },
+    layers: [
+      { id: "satellite", type: "raster", source: "satellite" },
+      {
+        id: "hills",
+        type: "hillshade",
+        source: "terrain",
+        paint: { "hillshade-exaggeration": 0.45 },
+      },
+      {
+        id: HEX_FILL,
+        type: "fill",
+        source: HEX_SOURCE,
+        paint: { "fill-color": "#c6e27a", "fill-opacity": 0.28 },
+      },
+      {
+        id: HEX_LINE,
+        type: "line",
+        source: HEX_SOURCE,
+        paint: { "line-color": "#e8eedc", "line-width": 2 },
+      },
+    ],
+    terrain: { source: "terrain", exaggeration: 1.35 },
+    sky: {},
+  };
+}
+
 export function attachView3d(): { open(cell: string): void; close(): void } {
   const overlayNode = document.getElementById("view3d");
   const canvasNode = document.getElementById("view3d-canvas");
@@ -116,6 +185,7 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
   let viewer: CesiumViewer | null = null;
   let tilesetAdded = false;
   let cesium: CesiumNS | null = null;
+  let mlMap: maplibregl.Map | null = null;
   let open = false;
 
   function setError(message: string | null): void {
@@ -123,20 +193,41 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
     errorEl.textContent = message ?? "";
   }
 
-  function frameCell(cell: string): void {
-    if (!viewer || !cesium) return;
+  function lookAtHex(cell: string): void {
     const [lat, lng] = cellToLatLng(cell);
+    const zoom = 16.2;
+    const pitch = 68;
+    const bearing = 18;
+    if (mlMap) {
+      const source = mlMap.getSource(HEX_SOURCE);
+      if (source && source.type === "geojson") {
+        (source as GeoJSONSource).setData({
+          type: "FeatureCollection",
+          features: [hexFeature(cell)],
+        });
+      }
+      mlMap.resize();
+      mlMap.flyTo({
+        center: [lng, lat],
+        zoom,
+        pitch,
+        bearing,
+        essential: true,
+        duration: 900,
+      });
+      return;
+    }
+    if (!viewer || !cesium) return;
     const target = cesium.Cartesian3.fromDegrees(lng, lat, 0);
     const range = getHexagonEdgeLengthAvg(H3_RES, "m") * 6;
     viewer.camera.lookAt(
       target,
       new cesium.HeadingPitchRange(
-        cesium.Math.toRadians(18),
+        cesium.Math.toRadians(bearing),
         cesium.Math.toRadians(-38),
         range,
       ),
     );
-
     viewer.entities.removeAll();
     const ring = cellToBoundary(cell, true);
     const degrees: number[] = [];
@@ -161,14 +252,34 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
     viewer.scene.requestRender();
   }
 
-  async function ensureViewer(): Promise<void> {
-    const key = apiKey();
-    if (!key) {
-      setError(
-        "Add a Google Map Tiles API key as VITE_GOOGLE_TILES_API_KEY or append ?key= to the URL. Enable Map Tiles API in Google Cloud.",
-      );
+  function ensureMapLibre(cell: string): void {
+    if (mlMap) {
+      lookAtHex(cell);
       return;
     }
+    const [lat, lng] = cellToLatLng(cell);
+    mlMap = new maplibregl.Map({
+      container: canvas,
+      style: terrainStyle(),
+      center: [lng, lat],
+      zoom: 16.2,
+      pitch: 68,
+      bearing: 18,
+      maxPitch: 85,
+      attributionControl: { compact: true },
+    });
+    mlMap.addControl(
+      new maplibregl.NavigationControl({ visualizePitch: true }),
+      "bottom-right",
+    );
+    mlMap.on("load", () => {
+      lookAtHex(cell);
+    });
+  }
+
+  async function ensureGoogle(cell: string): Promise<void> {
+    const key = apiKey();
+    if (!key) throw new Error("missing key");
     setError(null);
     label.textContent = "Loading photorealistic tiles…";
     cesium = await loadCesium();
@@ -201,6 +312,7 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
     }
     viewer.useDefaultRenderLoop = true;
     viewer.resize();
+    lookAtHex(cell);
   }
 
   function close(): void {
@@ -216,14 +328,22 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
     overlay.classList.add("is-open");
     overlay.setAttribute("aria-hidden", "false");
     label.textContent = `H3 r${H3_RES} · ${cell}`;
+    setError(null);
     try {
-      await ensureViewer();
+      if (apiKey() && !mlMap) {
+        await ensureGoogle(cell);
+      } else {
+        ensureMapLibre(cell);
+      }
       if (!open) return;
-      viewer?.resize();
-      frameCell(cell);
       label.textContent = `H3 r${H3_RES} · ${cell}`;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "3D view failed to load");
+      ensureMapLibre(cell);
+      setError(
+        err instanceof Error
+          ? `${err.message} — showing 3D terrain instead.`
+          : "Showing 3D terrain instead.",
+      );
     }
   }
 
