@@ -20,7 +20,9 @@ Then open **http://127.0.0.1:5173** in Chrome (or from Termux: `termux-open-url 
 
 Pan and pinch-zoom as usual. The crosshair control recenters on you.
 
-At zoom 13+ an H3 res-10 hex grid overlays the map. Your cell is highlighted; tap another hex to select it. The index is shown under the SOIL chip.
+At zoom 13+ an H3 res-10 hex grid overlays the map. Your cell is highlighted; tap a hex to fade in a photorealistic 3D view of that cell (Google 3D Tiles). Close or press Escape to return.
+
+3D tiles need a Map Tiles API key. Copy `apps/web/.env.example` to `apps/web/.env` as `VITE_GOOGLE_TILES_API_KEY`, or append `?key=` to the URL for a one-off test. Restart Vite after changing `.env`.
 
 If the browser refuses geolocation, the Vite server tries `termux-location` (needs the Termux:API app + location permission). Last successful coordinate is remembered for the next launch.
 

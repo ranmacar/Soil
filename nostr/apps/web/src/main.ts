@@ -1,6 +1,7 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { H3_RES, attachH3Overlay } from "./h3-overlay";
+import { attachView3d } from "./view3d";
 import "./style.css";
 
 const LAST_KEY = "soil:last-loc";
@@ -104,8 +105,11 @@ const geolocate = new maplibregl.GeolocateControl({
 });
 map.addControl(geolocate, "bottom-right");
 
+const view3d = attachView3d();
+
 const h3 = attachH3Overlay(map, {
   onFocus: setCellLabel,
+  onSelect: (cell) => view3d.open(cell),
 });
 if (last) h3.setHere(last);
 

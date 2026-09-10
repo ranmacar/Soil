@@ -18,6 +18,7 @@ type Role = "here" | "selected" | "idle";
 
 type OverlayHandlers = {
   onFocus?: (cell: string | null, reason: "zoom" | "here" | "select") => void;
+  onSelect?: (cell: string) => void;
 };
 
 export type H3Overlay = {
@@ -88,8 +89,10 @@ export function attachH3Overlay(map: MapLibreMap, handlers: OverlayHandlers = {}
   function onClick(ev: MapMouseEvent): void {
     const feature = map.queryRenderedFeatures(ev.point, { layers: [FILL] })[0];
     const id = feature?.properties?.id;
-    selectedId = typeof id === "string" ? id : null;
+    if (typeof id !== "string") return;
+    selectedId = id;
     render();
+    handlers.onSelect?.(id);
   }
 
   function mount(): void {

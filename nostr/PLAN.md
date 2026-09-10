@@ -8,7 +8,8 @@ Run on this Galaxy (Termux) a scrollable MapLibre map that starts at the phone's
 - Tiles: OpenFreeMap (no API key)
 - Location: browser geolocation, then Termux `termux-location` if the browser blocks it
 - H3 res-10 overlay on the MapLibre map (here cell + tap to select)
-- Out of scope for this slice: Nostr events, H3 claims, 3D, store
+- Tap a hex to fade in Google Photorealistic 3D Tiles of that cell
+- Out of scope for this slice: Nostr events, H3 claims, store
 
 ## North star
 
