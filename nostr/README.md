@@ -4,6 +4,26 @@ Nostr-first SOIL: community for distributing ideas, store for buying products an
 
 Parent repo: `ranmacar/Soil` (Cardano/Cloudflare prototype stays at repo root). This package is the next-era stack.
 
+## Current first goal
+
+A phone-local MapLibre map that opens on your GPS position.
+
+```sh
+cd nostr
+npm install
+npm run dev
+```
+
+On Termux, native Rollup cannot `dlopen` inside PRoot. The workspace pins `@rollup/wasm-node` so Vite still starts.
+
+Then open **http://127.0.0.1:5173** in Chrome (or from Termux: `termux-open-url http://127.0.0.1:5173`). Use localhost, not the LAN IP — browsers block geolocation on plain HTTP except on `127.0.0.1` / `localhost`. Allow location when prompted.
+
+Pan and pinch-zoom as usual. The crosshair control recenters on you.
+
+At zoom 13+ an H3 res-10 hex grid overlays the map. Your cell is highlighted; tap another hex to select it. The index is shown under the SOIL chip.
+
+If the browser refuses geolocation, the Vite server tries `termux-location` (needs the Termux:API app + location permission). Last successful coordinate is remembered for the next launch.
+
 ## Locked direction
 
 - **Community first** on Nostr — ideas circulate as events; deploy static apps via Blossom + nsite when ready.
@@ -14,4 +34,4 @@ Parent repo: `ranmacar/Soil` (Cardano/Cloudflare prototype stays at repo root). 
 
 ## Status
 
-Scaffold only. See `PLAN.md`.
+First map slice lives in `apps/web`. See `PLAN.md`.

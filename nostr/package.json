@@ -4,8 +4,16 @@
   "version": "0.0.1",
   "description": "Nostr-first SOIL community, store, and tower game",
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "echo \"Scaffold only — add apps/web next\"",
-    "build": "echo \"Scaffold only\""
+    "dev": "npm run dev -w @soil/web",
+    "build": "npm run build -w @soil/web",
+    "preview": "npm run preview -w @soil/web"
+  },
+  "overrides": {
+    "rollup": "npm:@rollup/wasm-node"
   }
 }

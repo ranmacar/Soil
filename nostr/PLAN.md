@@ -1,5 +1,15 @@
 # Soil/nostr — plan
 
+## Current first goal
+
+Run on this Galaxy (Termux) a scrollable MapLibre map that starts at the phone's location.
+
+- App: `nostr/apps/web` (`npm run dev` from `nostr/`)
+- Tiles: OpenFreeMap (no API key)
+- Location: browser geolocation, then Termux `termux-location` if the browser blocks it
+- H3 res-10 overlay on the MapLibre map (here cell + tap to select)
+- Out of scope for this slice: Nostr events, H3 claims, 3D, store
+
 ## North star
 
 Publish open regenerative settlement patterns (midrise towers that scale people while improving ecosystems). SOIL is the collaboration + marketplace path; the game is a living prospectus and product surface. Real builds happen through collaborators; SOIL does not require Martin to personally permit the first tower.
