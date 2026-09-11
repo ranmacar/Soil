@@ -46,6 +46,35 @@ body {
   pointer-events: none;
 }
 
+.modes {
+  display: flex;
+  gap: 0.25rem;
+  pointer-events: auto;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: var(--panel);
+}
+
+.mode {
+  min-height: 36px;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.mode.is-on {
+  background: #2a3322;
+  color: var(--ok);
+}
+
+.mode:disabled {
+  opacity: 0.4;
+}
+
 .wordmark {
   letter-spacing: 0.18em;
   font-size: 0.75rem;
@@ -125,11 +154,13 @@ body {
   inset: 0;
 }
 
-.view3d-close {
+.view3d-close,
+.view3d-walk,
+.walk-look,
+.walk-map {
   position: absolute;
   z-index: 2;
   top: calc(0.75rem + env(safe-area-inset-top, 0px));
-  right: 0.75rem;
   min-width: 44px;
   min-height: 44px;
   padding: 0 0.9rem;
@@ -139,6 +170,16 @@ body {
   color: var(--fg);
   font: inherit;
   font-size: 0.85rem;
+}
+
+.view3d-close,
+.walk-map {
+  right: 0.75rem;
+}
+
+.view3d-walk,
+.walk-look {
+  right: 5.2rem;
 }
 
 .view3d-label,
@@ -181,4 +222,67 @@ body {
 .view3d .cesium-widget canvas {
   width: 100%;
   height: 100%;
+}
+
+.walk {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: #1a2214;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.45s ease,
+    visibility 0.45s ease;
+}
+
+.walk.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.walk-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.walk-label {
+  position: absolute;
+  z-index: 2;
+  top: calc(0.75rem + env(safe-area-inset-top, 0px));
+  left: 0.75rem;
+  max-width: min(22rem, calc(100vw - 11rem));
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.walk-fwd {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  min-width: 9rem;
+  min-height: 52px;
+  padding: 0 1.2rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ok);
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.walk-fwd:active {
+  background: #2a3322;
 }

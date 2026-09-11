@@ -14,15 +14,28 @@
     <div id="map"></div>
     <header class="chrome">
       <span class="wordmark">SOIL</span>
+      <nav class="modes" aria-label="Map modes">
+        <button type="button" id="mode-map" class="mode is-on">Map</button>
+        <button type="button" id="mode-look" class="mode" disabled>Look</button>
+        <button type="button" id="mode-walk" class="mode" disabled>Walk</button>
+      </nav>
       <p id="status" class="status" hidden></p>
       <p id="cell" class="cell">H3 r10</p>
     </header>
     <div id="view3d" class="view3d" aria-hidden="true">
       <div id="view3d-canvas" class="view3d-canvas"></div>
-      <button type="button" id="view3d-close" class="view3d-close">Close</button>
+      <button type="button" id="view3d-close" class="view3d-close">Map</button>
+      <button type="button" id="view3d-walk" class="view3d-walk">Walk</button>
       <p id="view3d-label" class="view3d-label"></p>
       <p id="view3d-error" class="view3d-error" hidden></p>
       <div id="view3d-credits" class="view3d-credits"></div>
+    </div>
+    <div id="walk" class="walk" aria-hidden="true">
+      <canvas id="walk-canvas" class="walk-canvas"></canvas>
+      <p id="walk-label" class="walk-label"></p>
+      <button type="button" id="walk-look" class="walk-look">Look</button>
+      <button type="button" id="walk-map" class="walk-map">Map</button>
+      <button type="button" id="walk-fwd" class="walk-fwd">Hold to walk</button>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

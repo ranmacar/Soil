@@ -6,6 +6,7 @@ import {
 import maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
 import { H3_RES } from "./h3-overlay";
+import { POD } from "./placements";
 
 const CESIUM_BASE =
   "https://ajax.googleapis.com/ajax/libs/cesiumjs/1.105/Build/Cesium";
@@ -35,9 +36,11 @@ type CesiumNS = {
   Viewer: new (container: HTMLElement, options: Record<string, unknown>) => CesiumViewer;
   Cesium3DTileset: new (options: Record<string, unknown>) => unknown;
   Cartesian3: {
+    new (x: number, y: number, z: number): unknown;
     fromDegrees: (lng: number, lat: number, height?: number) => unknown;
     fromDegreesArray: (coordinates: number[]) => unknown;
   };
+  HeightReference?: { CLAMP_TO_GROUND: unknown };
   HeadingPitchRange: new (
     heading: number,
     pitch: number,
@@ -161,18 +164,23 @@ function terrainStyle(): maplibregl.StyleSpecification {
   };
 }
 
-export function attachView3d(): { open(cell: string): void; close(): void } {
+export function attachView3d(handlers: {
+  onWalk?: (cell: string) => void;
+  onClose?: () => void;
+} = {}): { open(cell: string): void; close(): void; cell(): string | null } {
   const overlayNode = document.getElementById("view3d");
   const canvasNode = document.getElementById("view3d-canvas");
   const labelNode = document.getElementById("view3d-label");
   const errorNode = document.getElementById("view3d-error");
   const closeNode = document.getElementById("view3d-close");
+  const walkNode = document.getElementById("view3d-walk");
   if (
     !(overlayNode instanceof HTMLElement) ||
     !(canvasNode instanceof HTMLElement) ||
     !(labelNode instanceof HTMLElement) ||
     !(errorNode instanceof HTMLElement) ||
-    !(closeNode instanceof HTMLElement)
+    !(closeNode instanceof HTMLElement) ||
+    !(walkNode instanceof HTMLElement)
   ) {
     throw new Error("missing 3D view markup");
   }
@@ -181,12 +189,14 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
   const label: HTMLElement = labelNode;
   const errorEl: HTMLElement = errorNode;
   const closeBtn: HTMLElement = closeNode;
+  const walkBtn: HTMLElement = walkNode;
 
   let viewer: CesiumViewer | null = null;
   let tilesetAdded = false;
   let cesium: CesiumNS | null = null;
   let mlMap: maplibregl.Map | null = null;
   let open = false;
+  let currentCell: string | null = null;
 
   function setError(message: string | null): void {
     errorEl.hidden = !message;
@@ -215,6 +225,7 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
         essential: true,
         duration: 900,
       });
+      setPodFootprint(lat, lng);
       return;
     }
     if (!viewer || !cesium) return;
@@ -249,7 +260,56 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
         classificationType: cesium.ClassificationType.CESIUM_3D_TILE,
       },
     });
+    viewer.entities.add({
+      position: cesium.Cartesian3.fromDegrees(lng, lat, POD.height / 2),
+      box: {
+        dimensions: new cesium.Cartesian3(POD.width, POD.depth, POD.height),
+        material: cesium.Color.fromCssColorString("#8fa56a").withAlpha(0.9),
+        outline: true,
+        outlineColor: cesium.Color.fromCssColorString("#e8eedc"),
+      },
+      heightReference: cesium.HeightReference?.CLAMP_TO_GROUND,
+    });
     viewer.scene.requestRender();
+  }
+
+  function setPodFootprint(lat: number, lng: number): void {
+    if (!mlMap) return;
+    const dLat = POD.width / 2 / 111_111;
+    const dLng = POD.depth / 2 / (111_111 * Math.cos((lat * Math.PI) / 180));
+    const ring = [
+      [lng - dLng, lat - dLat],
+      [lng + dLng, lat - dLat],
+      [lng + dLng, lat + dLat],
+      [lng - dLng, lat + dLat],
+      [lng - dLng, lat - dLat],
+    ];
+    const data = {
+      type: "FeatureCollection" as const,
+      features: [
+        {
+          type: "Feature" as const,
+          properties: { h: POD.height },
+          geometry: { type: "Polygon" as const, coordinates: [ring] },
+        },
+      ],
+    };
+    const source = mlMap.getSource("pod");
+    if (source && source.type === "geojson") {
+      (source as GeoJSONSource).setData(data);
+      return;
+    }
+    mlMap.addSource("pod", { type: "geojson", data });
+    mlMap.addLayer({
+      id: "pod-ex",
+      type: "fill-extrusion",
+      source: "pod",
+      paint: {
+        "fill-extrusion-color": "#8fa56a",
+        "fill-extrusion-height": POD.height,
+        "fill-extrusion-opacity": 0.9,
+      },
+    });
   }
 
   function ensureMapLibre(cell: string): void {
@@ -280,6 +340,12 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
   async function ensureGoogle(cell: string): Promise<void> {
     const key = apiKey();
     if (!key) throw new Error("missing key");
+    const probe = await fetch(
+      `https://tile.googleapis.com/v1/3dtiles/root.json?key=${encodeURIComponent(key)}`,
+    );
+    if (!probe.ok) {
+      throw new Error("Google 3D Tiles key was rejected");
+    }
     setError(null);
     label.textContent = "Loading photorealistic tiles…";
     cesium = await loadCesium();
@@ -315,7 +381,7 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
     lookAtHex(cell);
   }
 
-  function close(): void {
+  function hide(): void {
     if (!open) return;
     open = false;
     overlay.classList.remove("is-open");
@@ -323,7 +389,13 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
     if (viewer) viewer.useDefaultRenderLoop = false;
   }
 
+  function close(): void {
+    hide();
+    handlers.onClose?.();
+  }
+
   async function openCell(cell: string): Promise<void> {
+    currentCell = cell;
     open = true;
     overlay.classList.add("is-open");
     overlay.setAttribute("aria-hidden", "false");
@@ -348,9 +420,15 @@ export function attachView3d(): { open(cell: string): void; close(): void } {
   }
 
   closeBtn.addEventListener("click", () => close());
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") close();
+  walkBtn.addEventListener("click", () => {
+    if (!currentCell) return;
+    hide();
+    handlers.onWalk?.(currentCell);
   });
 
-  return { open: (cell) => void openCell(cell), close };
+  return {
+    open: (cell) => void openCell(cell),
+    close,
+    cell: () => currentCell,
+  };
 }

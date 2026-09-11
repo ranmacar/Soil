@@ -20,7 +20,13 @@ Then open **http://127.0.0.1:5173** in Chrome (or from Termux: `termux-open-url 
 
 Pan and pinch-zoom as usual. The crosshair control recenters on you.
 
-At zoom 13+ an H3 res-10 hex grid overlays the map. Tap a hex to fade into a pitched 3D view of that cell (satellite + terrain). Close or press Escape to return.
+Three modes, same hex:
+
+1. **Map** — 2D overview, pick a cell (H3 res-10 at zoom 13+).
+2. **Look** — 3D of that cell (Google tiles or satellite terrain) with the pod placed on it.
+3. **Walk** — first-person in the cell; walk into the pod. Hold **Hold to walk** on a phone; WASD + mouse on desktop.
+
+Escape steps back: Walk → Look → Map.
 
 If `VITE_GOOGLE_TILES_API_KEY` (or `?key=`) is set, that 3D view uses Google Photorealistic 3D Tiles instead. Enable Map Tiles API in Google Cloud; copy `apps/web/.env.example` to `apps/web/.env` and restart Vite.
 

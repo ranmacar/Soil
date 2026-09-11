@@ -2,7 +2,10 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { H3_RES, attachH3Overlay } from "./h3-overlay";
 import { attachView3d } from "./view3d";
+import { attachWalk } from "./walk";
 import "./style.css";
+
+type Mode = "map" | "look" | "walk";
 
 const LAST_KEY = "soil:last-loc";
 const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
@@ -105,11 +108,87 @@ const geolocate = new maplibregl.GeolocateControl({
 });
 map.addControl(geolocate, "bottom-right");
 
-const view3d = attachView3d();
+const modeMapNode = document.getElementById("mode-map");
+const modeLookNode = document.getElementById("mode-look");
+const modeWalkNode = document.getElementById("mode-walk");
+if (
+  !(modeMapNode instanceof HTMLButtonElement) ||
+  !(modeLookNode instanceof HTMLButtonElement) ||
+  !(modeWalkNode instanceof HTMLButtonElement)
+) {
+  throw new Error("missing mode buttons");
+}
+const modeMap: HTMLButtonElement = modeMapNode;
+const modeLook: HTMLButtonElement = modeLookNode;
+const modeWalk: HTMLButtonElement = modeWalkNode;
+
+let mode: Mode = "map";
+let selectedCell: string | null = null;
+
+function setMode(next: Mode): void {
+  mode = next;
+  modeMap.classList.toggle("is-on", next === "map");
+  modeLook.classList.toggle("is-on", next === "look");
+  modeWalk.classList.toggle("is-on", next === "walk");
+}
+
+function goMap(): void {
+  walk.close();
+  view3d.close();
+  setMode("map");
+}
+
+function goLook(cell: string): void {
+  selectedCell = cell;
+  modeLook.disabled = false;
+  modeWalk.disabled = false;
+  walk.close();
+  setMode("look");
+  view3d.open(cell);
+}
+
+function goWalk(cell: string): void {
+  selectedCell = cell;
+  modeLook.disabled = false;
+  modeWalk.disabled = false;
+  setMode("walk");
+  walk.open(cell);
+}
+
+const walk = attachWalk({
+  onLook: () => {
+    if (selectedCell) goLook(selectedCell);
+    else goMap();
+  },
+  onMap: () => goMap(),
+});
+
+const view3d = attachView3d({
+  onWalk: (cell) => goWalk(cell),
+  onClose: () => setMode("map"),
+});
 
 const h3 = attachH3Overlay(map, {
   onFocus: setCellLabel,
-  onSelect: (cell) => view3d.open(cell),
+  onSelect: (cell) => goLook(cell),
+});
+
+modeMap.addEventListener("click", () => goMap());
+modeLook.addEventListener("click", () => {
+  if (selectedCell) goLook(selectedCell);
+});
+modeWalk.addEventListener("click", () => {
+  if (selectedCell) goWalk(selectedCell);
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (mode === "walk") {
+    if (selectedCell) goLook(selectedCell);
+    else goMap();
+    return;
+  }
+  if (mode === "look") goMap();
 });
 if (last) h3.setHere(last);
 
