@@ -5,14 +5,18 @@ import {
 } from "h3-js";
 import maplibregl from "maplibre-gl";
 import type { GeoJSONSource } from "maplibre-gl";
+import { lngLatToEnu } from "./geo";
 import { H3_RES } from "./h3-overlay";
 import { POD } from "./placements";
+import { loadTerrainPatch, samplePatch } from "./terrain";
 
 const CESIUM_BASE =
   "https://ajax.googleapis.com/ajax/libs/cesiumjs/1.105/Build/Cesium";
 const HEX_SOURCE = "hex-focus";
 const HEX_FILL = "hex-focus-fill";
 const HEX_LINE = "hex-focus-line";
+
+type Cartographic = { longitude: number; latitude: number; height: number };
 
 type CesiumViewer = {
   resize: () => void;
@@ -29,6 +33,8 @@ type CesiumViewer = {
     primitives: { add: (primitive: unknown) => unknown };
     requestRender: () => void;
     globe: { show: boolean };
+    sampleHeight?: (pos: Cartographic) => number | undefined;
+    sampleHeightMostDetailed?: (positions: Cartographic[]) => Promise<Cartographic[]>;
   };
 };
 
@@ -39,14 +45,18 @@ type CesiumNS = {
     new (x: number, y: number, z: number): unknown;
     fromDegrees: (lng: number, lat: number, height?: number) => unknown;
     fromDegreesArray: (coordinates: number[]) => unknown;
+    fromDegreesArrayHeights: (coordinates: number[]) => unknown;
   };
-  HeightReference?: { CLAMP_TO_GROUND: unknown };
+  Cartographic: {
+    fromDegrees: (lng: number, lat: number, height?: number) => Cartographic;
+  };
+  HeightReference?: { CLAMP_TO_GROUND: unknown; CLAMP_TO_3D_TILE?: unknown };
   HeadingPitchRange: new (
     heading: number,
     pitch: number,
     range: number,
   ) => unknown;
-  Math: { toRadians: (degrees: number) => number };
+  Math: { toRadians: (degrees: number) => number; toDegrees: (rad: number) => number };
   Color: {
     fromCssColorString: (css: string) => { withAlpha: (alpha: number) => unknown };
   };
@@ -148,9 +158,14 @@ function terrainStyle(): maplibregl.StyleSpecification {
       },
       {
         id: HEX_FILL,
-        type: "fill",
+        type: "fill-extrusion",
         source: HEX_SOURCE,
-        paint: { "fill-color": "#c6e27a", "fill-opacity": 0.28 },
+        paint: {
+          "fill-extrusion-color": "#c6e27a",
+          "fill-extrusion-height": 1.2,
+          "fill-extrusion-base": 0,
+          "fill-extrusion-opacity": 0.45,
+        },
       },
       {
         id: HEX_LINE,
@@ -159,7 +174,7 @@ function terrainStyle(): maplibregl.StyleSpecification {
         paint: { "line-color": "#e8eedc", "line-width": 2 },
       },
     ],
-    terrain: { source: "terrain", exaggeration: 1.35 },
+    terrain: { source: "terrain", exaggeration: 1 },
     sky: {},
   };
 }
@@ -203,7 +218,42 @@ export function attachView3d(handlers: {
     errorEl.textContent = message ?? "";
   }
 
-  function lookAtHex(cell: string): void {
+  async function heightsForRing(
+    cell: string,
+    lng: number,
+    lat: number,
+    ring: number[][],
+  ): Promise<{ center: number; ring: number[] }> {
+    if (viewer && cesium && viewer.scene.sampleHeightMostDetailed) {
+      const C = cesium;
+      const samples = [
+        C.Cartographic.fromDegrees(lng, lat),
+        ...ring.map(([lo, la]) => C.Cartographic.fromDegrees(lo, la)),
+      ];
+      await viewer.scene.sampleHeightMostDetailed(samples);
+      const center = samples[0]?.height;
+      if (typeof center === "number" && Number.isFinite(center)) {
+        return {
+          center,
+          ring: samples.slice(1).map((p) =>
+            typeof p.height === "number" && Number.isFinite(p.height)
+              ? p.height
+              : center,
+          ),
+        };
+      }
+    }
+    const patch = await loadTerrainPatch(cell);
+    return {
+      center: patch.originHeight,
+      ring: ring.map(([lo, la]) => {
+        const enu = lngLatToEnu(la, lo, lat, lng);
+        return patch.originHeight + samplePatch(patch, enu.x, enu.z);
+      }),
+    };
+  }
+
+  async function lookAtHex(cell: string): Promise<void> {
     const [lat, lng] = cellToLatLng(cell);
     const zoom = 16.2;
     const pitch = 68;
@@ -229,10 +279,21 @@ export function attachView3d(handlers: {
       return;
     }
     if (!viewer || !cesium) return;
-    const target = cesium.Cartesian3.fromDegrees(lng, lat, 0);
+    const ring = cellToBoundary(cell, true);
     const range = getHexagonEdgeLengthAvg(H3_RES, "m") * 6;
     viewer.camera.lookAt(
-      target,
+      cesium.Cartesian3.fromDegrees(lng, lat, 0),
+      new cesium.HeadingPitchRange(
+        cesium.Math.toRadians(bearing),
+        cesium.Math.toRadians(-38),
+        range,
+      ),
+    );
+    viewer.scene.requestRender();
+    const sampled = await heightsForRing(cell, lng, lat, ring);
+    const ground = sampled.center;
+    viewer.camera.lookAt(
+      cesium.Cartesian3.fromDegrees(lng, lat, ground),
       new cesium.HeadingPitchRange(
         cesium.Math.toRadians(bearing),
         cesium.Math.toRadians(-38),
@@ -240,35 +301,35 @@ export function attachView3d(handlers: {
       ),
     );
     viewer.entities.removeAll();
-    const ring = cellToBoundary(cell, true);
-    const degrees: number[] = [];
-    for (const [ringLng, ringLat] of ring) {
-      degrees.push(ringLng, ringLat);
-    }
-    const hierarchy = cesium.Cartesian3.fromDegreesArray(degrees);
+    const withH: number[] = [];
+    ring.forEach(([ringLng, ringLat], i) => {
+      withH.push(ringLng, ringLat, (sampled.ring[i] ?? ground) + 0.4);
+    });
+    const first = ring[0];
+    if (first) withH.push(first[0], first[1], (sampled.ring[0] ?? ground) + 0.4);
+    const draped = cesium.Cartesian3.fromDegreesArrayHeights(withH);
     viewer.entities.add({
       polyline: {
-        positions: hierarchy,
-        width: 3,
+        positions: draped,
+        width: 4,
         material: cesium.Color.fromCssColorString("#c6e27a"),
       },
     });
     viewer.entities.add({
       polygon: {
-        hierarchy,
-        material: cesium.Color.fromCssColorString("#c6e27a").withAlpha(0.22),
-        classificationType: cesium.ClassificationType.CESIUM_3D_TILE,
+        hierarchy: draped,
+        perPositionHeight: true,
+        material: cesium.Color.fromCssColorString("#c6e27a").withAlpha(0.28),
       },
     });
     viewer.entities.add({
-      position: cesium.Cartesian3.fromDegrees(lng, lat, POD.height / 2),
+      position: cesium.Cartesian3.fromDegrees(lng, lat, ground + POD.height / 2),
       box: {
         dimensions: new cesium.Cartesian3(POD.width, POD.depth, POD.height),
-        material: cesium.Color.fromCssColorString("#8fa56a").withAlpha(0.9),
+        material: cesium.Color.fromCssColorString("#8fa56a").withAlpha(0.92),
         outline: true,
         outlineColor: cesium.Color.fromCssColorString("#e8eedc"),
       },
-      heightReference: cesium.HeightReference?.CLAMP_TO_GROUND,
     });
     viewer.scene.requestRender();
   }
@@ -314,7 +375,7 @@ export function attachView3d(handlers: {
 
   function ensureMapLibre(cell: string): void {
     if (mlMap) {
-      lookAtHex(cell);
+      void lookAtHex(cell);
       return;
     }
     const [lat, lng] = cellToLatLng(cell);
@@ -333,7 +394,7 @@ export function attachView3d(handlers: {
       "bottom-right",
     );
     mlMap.on("load", () => {
-      lookAtHex(cell);
+      void lookAtHex(cell);
     });
   }
 
@@ -378,7 +439,7 @@ export function attachView3d(handlers: {
     }
     viewer.useDefaultRenderLoop = true;
     viewer.resize();
-    lookAtHex(cell);
+    await lookAtHex(cell);
   }
 
   function hide(): void {

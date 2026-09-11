@@ -1,5 +1,6 @@
 import { hexRingEnu } from "./geo";
 import { POD } from "./placements";
+import { loadTerrainPatch, samplePatch } from "./terrain";
 
 type WalkHandle = {
   open(cell: string): void;
@@ -57,8 +58,9 @@ export function attachWalk(handlers: { onLook?: () => void; onMap?: () => void }
     open = true;
     overlay.classList.add("is-open");
     overlay.setAttribute("aria-hidden", "false");
-    label.textContent = `Walk · ${cell}`;
+    label.textContent = `Walk · loading terrain…`;
 
+    const patch = await loadTerrainPatch(cell);
     const {
       Engine,
       Scene,
@@ -70,9 +72,13 @@ export function attachWalk(handlers: { onLook?: () => void; onMap?: () => void }
       Color4,
       MeshBuilder,
       StandardMaterial,
+      Texture,
+      VertexBuffer,
+      VertexData,
     } = await import("@babylonjs/core");
 
     if (!open) return;
+    label.textContent = `Walk · ${cell}`;
     sceneDispose?.();
     engine?.dispose();
 
@@ -94,14 +100,47 @@ export function attachWalk(handlers: { onLook?: () => void; onMap?: () => void }
     interior.diffuse = new Color3(1, 0.95, 0.8);
 
     const groundMat = new StandardMaterial("ground", scene);
-    groundMat.diffuseColor = new Color3(0.45, 0.52, 0.38);
-    groundMat.specularColor = new Color3(0.05, 0.05, 0.05);
+    groundMat.diffuseColor = new Color3(0.55, 0.58, 0.5);
+    groundMat.specularColor = new Color3(0.04, 0.04, 0.04);
+    if (patch.texture) {
+      const tex = new Texture(patch.texture.toDataURL("image/jpeg", 0.82), scene);
+      tex.wrapU = Texture.CLAMP_ADDRESSMODE;
+      tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+      groundMat.diffuseTexture = tex;
+    }
 
     const ring = hexRingEnu(cell);
-    const ground = MeshBuilder.CreateGround("ground", { width: 180, height: 180 }, scene);
+    const ground = MeshBuilder.CreateGround(
+      "ground",
+      {
+        width: patch.size,
+        height: patch.size,
+        subdivisions: patch.cells - 1,
+        updatable: true,
+      },
+      scene,
+    );
+    const positions = ground.getVerticesData(VertexBuffer.PositionKind);
+    if (positions) {
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i] ?? 0;
+        const z = positions[i + 2] ?? 0;
+        positions[i + 1] = samplePatch(patch, x, z);
+      }
+      ground.updateVerticesData(VertexBuffer.PositionKind, positions);
+      const indices = ground.getIndices();
+      const normals = ground.getVerticesData(VertexBuffer.NormalKind);
+      if (indices && normals) {
+        VertexData.ComputeNormals(positions, indices, normals);
+        ground.updateVerticesData(VertexBuffer.NormalKind, normals);
+      }
+    }
+    ground.refreshBoundingInfo();
     ground.material = groundMat;
     ground.checkCollisions = true;
-    const outline = ring.map((p) => new Vector3(p.x, 0.08, p.z));
+    const outline = ring.map(
+      (p) => new Vector3(p.x, samplePatch(patch, p.x, p.z) + 0.35, p.z),
+    );
     if (outline[0]) outline.push(outline[0]);
     MeshBuilder.CreateLines("hex", { points: outline }, scene);
 
@@ -170,9 +209,11 @@ export function attachWalk(handlers: { onLook?: () => void; onMap?: () => void }
     roof.material = roofMat;
     roof.checkCollisions = true;
 
+    const spawnZ = d / 2 + 4;
+    const spawnY = samplePatch(patch, 0, spawnZ);
     const camera = new UniversalCamera(
       "eye",
-      new Vector3(0, 1.7, d / 2 + 4),
+      new Vector3(0, spawnY + 1.7, spawnZ),
       scene,
     );
     camera.setTarget(new Vector3(0, 1.5, 0));
